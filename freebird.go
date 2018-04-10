@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 
 	"github.com/dghubble/go-twitter/twitter"
 	"golang.org/x/oauth2"
@@ -16,8 +17,59 @@ var (
 	username   = flag.String("username", "", "Twitter user name")
 )
 
+type Friend struct {
+	ScreenName string
+	ID         int64
+}
+
+func GetFriends(client *twitter.Client, username string) ([]Friend, error) {
+	user, _, err := client.Users.Show(&twitter.UserShowParams{
+		ScreenName: username,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	params := &twitter.FriendListParams{
+		UserID:              user.ID,
+		ScreenName:          username,
+		Cursor:              -1,
+		Count:               200,
+		SkipStatus:          &[]bool{true}[0],
+		IncludeUserEntities: &[]bool{false}[0],
+	}
+
+	var friends []Friend
+	for params.Cursor != 0 {
+		f, _, err := client.Friends.List(params)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, user := range f.Users {
+			friends = append(friends, Friend{user.ScreenName, user.ID})
+		}
+
+		params.Cursor = f.NextCursor
+	}
+
+	return friends, nil
+}
+
 func main() {
 	flag.Parse()
+	if *api_key == "" {
+		fmt.Fprintf(os.Stderr, "%s: Please specify a Twitter API consumer key.\n", os.Args[0])
+		os.Exit(1)
+	}
+	if *api_secret == "" {
+		fmt.Fprintf(os.Stderr, "%s: Please specify a Twitter API consumer secret.\n", os.Args[0])
+		os.Exit(1)
+	}
+	if *username == "" {
+		fmt.Fprintf(os.Stderr, "%s: Please specify a Twitter username.\n", os.Args[0])
+		os.Exit(1)
+	}
 
 	config := &clientcredentials.Config{
 		ClientID:     *api_key,
@@ -27,39 +79,11 @@ func main() {
 	httpClient := config.Client(oauth2.NoContext)
 	client := twitter.NewClient(httpClient)
 
-	user, _, err := client.Users.Show(&twitter.UserShowParams{
-		ScreenName: *username,
-	})
+	friends, err := GetFriends(client, *username)
 	if err != nil {
 		log.Println(err)
+		return
 	}
 
-	params := &twitter.FriendListParams{
-		UserID:              user.ID,
-		ScreenName:          *username,
-		Cursor:              0,
-		Count:               200,
-		SkipStatus:          &[]bool{true}[0],
-		IncludeUserEntities: &[]bool{false}[0],
-	}
-
-	var users []twitter.User
-	var cursor int64 = 1
-	for cursor != 0 {
-		friends, _, err := client.Friends.List(params)
-		if err != nil {
-			log.Println(err)
-		}
-
-		for _, user := range friends.Users {
-			users = append(users, user)
-		}
-
-		params.Cursor = friends.NextCursor
-		cursor = params.Cursor
-	}
-
-	for i, user := range users {
-		fmt.Printf("%d\t%-20s%d\n", i, user.ScreenName, user.ID)
-	}
+	fmt.Println(friends)
 }
