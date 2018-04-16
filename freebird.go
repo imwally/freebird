@@ -115,6 +115,5 @@ func main() {
 		}
 
 		fmt.Println("BOOM!")
-		return
 	}
 }
