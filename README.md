@@ -26,3 +26,20 @@ each window.
 If for some reason you want a snapshot (list of IDs) of the accounts
 you follow then this utility can at least handle that.
 
+```
+Usage of freebird:
+  -consumerKey string
+        API consumer key
+  -consumerSecret string
+        API consumer secret
+  -snapshot
+        Print all friend's IDs to stdout
+  -token string
+        API token
+  -tokenSecret string
+        API token secret
+  -unfollow
+        Unfollow your friends
+  -username string
+        Your user name
+```
