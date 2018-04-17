@@ -11,16 +11,17 @@ import (
 	"time"
 
 	"github.com/dghubble/go-twitter/twitter"
-	"golang.org/x/oauth2"
-	"golang.org/x/oauth2/clientcredentials"
+	"github.com/dghubble/oauth1"
 )
 
 var (
-	api_key    = flag.String("key", "", "API consumer key")
-	api_secret = flag.String("secret", "", "API consumer secret")
-	snapshot   = flag.Bool("snapshot", false, "Print all friend's IDs to stdout")
-	unfollow   = flag.Bool("unfollow", false, "Unfollow your friends")
-	username   = flag.String("username", "", "Your user name")
+	accessToken    = flag.String("token", "", "API token")
+	accessSecret   = flag.String("tokenSecret", "", "API token secret")
+	consumerKey    = flag.String("consumerKey", "", "API consumer key")
+	consumerSecret = flag.String("consumerSecret", "", "API consumer secret")
+	snapshot       = flag.Bool("snapshot", false, "Print all friend's IDs to stdout")
+	unfollow       = flag.Bool("unfollow", false, "Unfollow your friends")
+	username       = flag.String("username", "", "Your user name")
 )
 
 func ErrAndExit(s string) {
@@ -44,76 +45,85 @@ func ResetSleep(resp *http.Response) {
 	time.Sleep(until)
 }
 
+func SnapShot(fids []int64) {
+	for _, id := range fids {
+		fmt.Println(id)
+	}
+}
+
+func Unfollow(client *twitter.Client, fids []int64) error {
+	fmt.Printf("Are you sure you want to unfollow everyone? (y/n): ")
+	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Scan()
+	if scanner.Text() != "y" {
+		return nil
+	}
+
+	for _, id := range fids {
+		fp := &twitter.FriendshipDestroyParams{
+			UserID: id,
+		}
+
+		user, resp, err := client.Friendships.Destroy(fp)
+		fmt.Println(resp)
+		if err != nil {
+			return err
+		}
+
+		log.Println("Unfollowed:", user.ScreenName)
+
+	}
+
+	return nil
+}
+
 func main() {
 	flag.Parse()
-	if *api_key == "" {
+	if *accessToken == "" {
+		ErrAndExit("no twitter api token specified")
+	}
+	if *accessSecret == "" {
+		ErrAndExit("no twitter api token secret specified")
+	}
+	if *consumerKey == "" {
 		ErrAndExit("no twitter api consumer key specified")
 	}
-	if *api_secret == "" {
+	if *consumerSecret == "" {
 		ErrAndExit("no twitter api consumer secret specified")
 	}
 	if *username == "" {
 		ErrAndExit("no twitter username specified")
 	}
 
-	// Generate a twitter client
-	config := &clientcredentials.Config{
-		ClientID:     *api_key,
-		ClientSecret: *api_secret,
-		TokenURL:     "https://api.twitter.com/oauth2/token",
-	}
-	httpClient := config.Client(oauth2.NoContext)
+	config := oauth1.NewConfig(*consumerKey, *consumerSecret)
+	configToken := oauth1.NewToken(*accessToken, *accessSecret)
+	httpClient := config.Client(oauth1.NoContext, configToken)
 	client := twitter.NewClient(httpClient)
 
-	// Need user's ID to generate friend list params
-	user, _, err := client.Users.Show(&twitter.UserShowParams{
-		ScreenName: *username,
-	})
-	if err != nil {
-		log.Println(err)
-	}
-
-	// Params for friend IDs
 	fp := &twitter.FriendIDParams{
-		UserID:     user.ID,
 		ScreenName: *username,
 		Cursor:     -1,
 		Count:      5000,
 	}
 
-	// Round up those friends (really, just their IDs)
-	var friendIDs []int64
 	for fp.Cursor != 0 {
 		fids, resp, err := client.Friends.IDs(fp)
 		if err != nil {
-			log.Println(err)
+			ErrAndExit(err.Error())
 		}
 		ResetSleep(resp)
 
-		for _, fid := range fids.IDs {
-			friendIDs = append(friendIDs, fid)
+		if *snapshot {
+			SnapShot(fids.IDs)
+		}
+
+		if *unfollow && !*snapshot {
+			err := Unfollow(client, fids.IDs)
+			if err != nil {
+				ErrAndExit(err.Error())
+			}
 		}
 
 		fp.Cursor = fids.NextCursor
-	}
-
-	// Print friend's IDs to stdout
-	if *snapshot {
-		for _, id := range friendIDs {
-			fmt.Println(id)
-		}
-		return
-	}
-
-	// Fly away, free bird
-	if *unfollow {
-		fmt.Printf("Are you sure you want to unfollow everyone? (y/n): ")
-		scanner := bufio.NewScanner(os.Stdin)
-		scanner.Scan()
-		if scanner.Text() != "y" {
-			return
-		}
-
-		fmt.Println("BOOM!")
 	}
 }
